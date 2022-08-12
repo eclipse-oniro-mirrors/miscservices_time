@@ -176,11 +176,11 @@ public:
      * @return bool true on success, false on failure.
      */
     bool ResetAllProxy();
+    bool ConnectService();
 
 private:
     TimeServiceClient();
     ~TimeServiceClient();
-    static sptr<ITimeService> ConnectService();
 
     static std::mutex instanceLock_;
     static sptr<TimeServiceClient> instance_;
