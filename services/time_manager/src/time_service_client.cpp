@@ -52,44 +52,45 @@ sptr<TimeServiceClient> TimeServiceClient::GetInstance()
     return instance_;
 }
 
-sptr<ITimeService> TimeServiceClient::ConnectService()
+bool TimeServiceClient::ConnectService()
 {
+    if (timeServiceProxy_ != nullptr) {
+        return true;
+    }
+    std::lock_guard<std::mutex> autoLock(instanceLock_);
+    if (timeServiceProxy_ != nullptr) {
+        return true;
+    }
     sptr<ISystemAbilityManager> systemAbilityManager =
         SystemAbilityManagerClient::GetInstance().GetSystemAbilityManager();
     if (systemAbilityManager == nullptr) {
         TIME_HILOGE(TIME_MODULE_CLIENT, "Getting SystemAbilityManager failed.");
-        return nullptr;
+        return false;
     }
 
     auto systemAbility = systemAbilityManager->GetSystemAbility(TIME_SERVICE_ID);
     if (systemAbility == nullptr) {
         TIME_HILOGE(TIME_MODULE_CLIENT, "Get SystemAbility failed.");
-        return nullptr;
+        return false;
     }
     deathRecipient_ = new TimeSaDeathRecipient();
     systemAbility->AddDeathRecipient(deathRecipient_);
-    sptr<ITimeService> timeServiceProxy_ = iface_cast<ITimeService>(systemAbility);
+    timeServiceProxy_ = iface_cast<ITimeService>(systemAbility);
     if (timeServiceProxy_ == nullptr) {
         TIME_HILOGE(TIME_MODULE_CLIENT, "Get TimeServiceProxy from SA failed.");
-        return nullptr;
+        return false;
     }
 
-    TIME_HILOGD(TIME_MODULE_CLIENT, "Getting TimeServiceProxy succeeded.");
-    return timeServiceProxy_;
+    TIME_HILOGI(TIME_MODULE_CLIENT, "Getting TimeServiceProxy succeeded, ptr: %{public}p, wrap: %{public}p",
+        timeServiceProxy_.GetRefPtr(), &timeServiceProxy_);
+    return true;
 }
 
 bool TimeServiceClient::TimeServiceClient::SetTime(const int64_t time)
 {
-    if (timeServiceProxy_ == nullptr) {
-        TIME_HILOGW(TIME_MODULE_CLIENT, "Redo ConnectService");
-        timeServiceProxy_ = ConnectService();
-    }
-
-    if (timeServiceProxy_ == nullptr) {
-        TIME_HILOGE(TIME_MODULE_CLIENT, "SetTime quit because redoing ConnectService failed.");
+    if (!ConnectService()) {
         return false;
     }
-
     if (timeServiceProxy_->SetTime(time) != ERR_OK) {
         return false;
     }
@@ -98,16 +99,9 @@ bool TimeServiceClient::TimeServiceClient::SetTime(const int64_t time)
 
 bool TimeServiceClient::SetTimeZone(const std::string timezoneId)
 {
-    if (timeServiceProxy_ == nullptr) {
-        TIME_HILOGW(TIME_MODULE_CLIENT, "Redo ConnectService");
-        timeServiceProxy_ = ConnectService();
-    }
-
-    if (timeServiceProxy_ == nullptr) {
-        TIME_HILOGE(TIME_MODULE_CLIENT, "SetTimeZone quit because redoing ConnectService failed.");
+    if (!ConnectService()) {
         return false;
     }
-
     if (timeServiceProxy_->SetTimeZone(timezoneId) != ERR_OK) {
         return false;
     }
@@ -120,16 +114,9 @@ uint64_t TimeServiceClient::CreateTimer(std::shared_ptr<ITimerInfo> TimerOptions
         TIME_HILOGW(TIME_MODULE_CLIENT, "Input nullptr");
         return 0;
     }
-    if (timeServiceProxy_ == nullptr) {
-        TIME_HILOGW(TIME_MODULE_CLIENT, "Redo ConnectService");
-        timeServiceProxy_ = ConnectService();
+    if (!ConnectService()) {
+        return false;
     }
-
-    if (timeServiceProxy_ == nullptr) {
-        TIME_HILOGE(TIME_MODULE_CLIENT, " quit because redoing ConnectService failed.");
-        return 0;
-    }
-
     auto timerCallbackInfoObject = TimerCallback::GetInstance()->AsObject();
     if (!timerCallbackInfoObject) {
         TIME_HILOGE(TIME_MODULE_CLIENT, "New TimerCallback failed");
@@ -154,43 +141,23 @@ uint64_t TimeServiceClient::CreateTimer(std::shared_ptr<ITimerInfo> TimerOptions
 
 bool TimeServiceClient::StartTimer(uint64_t timerId, uint64_t triggerTime)
 {
-    if (timeServiceProxy_ == nullptr) {
-        TIME_HILOGW(TIME_MODULE_CLIENT, "Redo ConnectService");
-        timeServiceProxy_ = ConnectService();
-    }
-
-    if (timeServiceProxy_ == nullptr) {
-        TIME_HILOGE(TIME_MODULE_CLIENT, "StartTimer quit because redoing ConnectService failed.");
+    if (!ConnectService()) {
         return false;
     }
-
     return timeServiceProxy_->StartTimer(timerId, triggerTime);
 }
 
 bool TimeServiceClient::StopTimer(uint64_t timerId)
 {
-    if (timeServiceProxy_ == nullptr) {
-        TIME_HILOGW(TIME_MODULE_CLIENT, "Redo ConnectService");
-        timeServiceProxy_ = ConnectService();
-    }
-
-    if (timeServiceProxy_ == nullptr) {
-        TIME_HILOGE(TIME_MODULE_CLIENT, "StopTimer quit because redoing ConnectService failed.");
+    if (!ConnectService()) {
         return false;
     }
-
     return timeServiceProxy_->StopTimer(timerId);
 }
 
 bool TimeServiceClient::DestroyTimer(uint64_t timerId)
 {
-    if (timeServiceProxy_ == nullptr) {
-        TIME_HILOGW(TIME_MODULE_CLIENT, "Redo ConnectService");
-        timeServiceProxy_ = ConnectService();
-    }
-
-    if (timeServiceProxy_ == nullptr) {
-        TIME_HILOGE(TIME_MODULE_CLIENT, "DestroyTimer quit because redoing ConnectService failed.");
+    if (!ConnectService()) {
         return false;
     }
     if (timeServiceProxy_->DestroyTimer(timerId)) {
@@ -203,16 +170,9 @@ bool TimeServiceClient::DestroyTimer(uint64_t timerId)
 std::string TimeServiceClient::GetTimeZone()
 {
     std::string timeZoneId;
-    if (timeServiceProxy_ == nullptr) {
-        TIME_HILOGW(TIME_MODULE_CLIENT, "Redo ConnectService");
-        timeServiceProxy_ = ConnectService();
-    }
-
-    if (timeServiceProxy_ == nullptr) {
-        TIME_HILOGE(TIME_MODULE_CLIENT, "GetTimeZone quit because redoing ConnectService failed.");
+    if (!ConnectService()) {
         return std::string("");
     }
-
     if (timeServiceProxy_->GetTimeZone(timeZoneId) != ERR_OK) {
         TIME_HILOGE(TIME_MODULE_CLIENT, "get failed.");
         return std::string("");
@@ -223,15 +183,10 @@ std::string TimeServiceClient::GetTimeZone()
 int64_t TimeServiceClient::GetWallTimeMs()
 {
     int64_t times;
-    if (timeServiceProxy_ == nullptr) {
-        TIME_HILOGW(TIME_MODULE_CLIENT, "Redo ConnectService");
-        timeServiceProxy_ = ConnectService();
-    }
-
-    if (timeServiceProxy_ == nullptr) {
-        TIME_HILOGE(TIME_MODULE_CLIENT, "GetWallTimeMs quit because redoing ConnectService failed.");
+    if (!ConnectService()) {
         return -1;
     }
+    TIME_HILOGW(TIME_MODULE_CLIENT, "timeServiceProxy_: %{public}p", timeServiceProxy_.GetRefPtr());
     if (timeServiceProxy_->GetWallTimeMs(times) != ERR_OK) {
         TIME_HILOGE(TIME_MODULE_CLIENT, "get failed.");
         return -1;
@@ -243,16 +198,9 @@ int64_t TimeServiceClient::GetWallTimeMs()
 int64_t TimeServiceClient::GetWallTimeNs()
 {
     int64_t times;
-    if (timeServiceProxy_ == nullptr) {
-        TIME_HILOGW(TIME_MODULE_CLIENT, "Redo ConnectService");
-        timeServiceProxy_ = ConnectService();
-    }
-
-    if (timeServiceProxy_ == nullptr) {
-        TIME_HILOGE(TIME_MODULE_CLIENT, "GetWallTimeNs quit because redoing ConnectService failed.");
+    if (!ConnectService()) {
         return -1;
     }
-
     if (timeServiceProxy_->GetWallTimeNs(times) != ERR_OK) {
         TIME_HILOGE(TIME_MODULE_CLIENT, "get failed.");
         return -1;
@@ -264,16 +212,9 @@ int64_t TimeServiceClient::GetWallTimeNs()
 int64_t TimeServiceClient::GetBootTimeMs()
 {
     int64_t times;
-    if (timeServiceProxy_ == nullptr) {
-        TIME_HILOGW(TIME_MODULE_CLIENT, "Redo ConnectService");
-        timeServiceProxy_ = ConnectService();
-    }
-
-    if (timeServiceProxy_ == nullptr) {
-        TIME_HILOGE(TIME_MODULE_CLIENT, "GetBootTimeMs quit because redoing ConnectService failed.");
+    if (!ConnectService()) {
         return -1;
     }
-
     if (timeServiceProxy_->GetBootTimeMs(times) != ERR_OK) {
         TIME_HILOGE(TIME_MODULE_CLIENT, "get failed.");
         return -1;
@@ -285,16 +226,9 @@ int64_t TimeServiceClient::GetBootTimeMs()
 int64_t TimeServiceClient::GetBootTimeNs()
 {
     int64_t times;
-    if (timeServiceProxy_ == nullptr) {
-        TIME_HILOGW(TIME_MODULE_CLIENT, "Redo ConnectService");
-        timeServiceProxy_ = ConnectService();
-    }
-
-    if (timeServiceProxy_ == nullptr) {
-        TIME_HILOGE(TIME_MODULE_CLIENT, "GetBootTimeNs quit because redoing ConnectService failed.");
+    if (!ConnectService()) {
         return -1;
     }
-
     if (timeServiceProxy_->GetBootTimeNs(times) != ERR_OK) {
         TIME_HILOGE(TIME_MODULE_CLIENT, "get failed.");
         return -1;
@@ -306,16 +240,9 @@ int64_t TimeServiceClient::GetBootTimeNs()
 int64_t TimeServiceClient::GetMonotonicTimeMs()
 {
     int64_t times;
-    if (timeServiceProxy_ == nullptr) {
-        TIME_HILOGW(TIME_MODULE_CLIENT, "Redo ConnectService");
-        timeServiceProxy_ = ConnectService();
-    }
-
-    if (timeServiceProxy_ == nullptr) {
-        TIME_HILOGE(TIME_MODULE_CLIENT, "GetMonotonicTimeMs quit because redoing ConnectService failed.");
+    if (!ConnectService()) {
         return -1;
     }
-
     if (timeServiceProxy_->GetMonotonicTimeMs(times) != ERR_OK) {
         TIME_HILOGE(TIME_MODULE_CLIENT, "get failed.");
         return -1;
@@ -327,16 +254,9 @@ int64_t TimeServiceClient::GetMonotonicTimeMs()
 int64_t TimeServiceClient::GetMonotonicTimeNs()
 {
     int64_t times;
-    if (timeServiceProxy_ == nullptr) {
-        TIME_HILOGW(TIME_MODULE_CLIENT, "Redo ConnectService");
-        timeServiceProxy_ = ConnectService();
-    }
-
-    if (timeServiceProxy_ == nullptr) {
-        TIME_HILOGE(TIME_MODULE_CLIENT, "GetMonotonicTimeNs quit because redoing ConnectService failed.");
+    if (!ConnectService()) {
         return -1;
     }
-
     if (timeServiceProxy_->GetMonotonicTimeNs(times) != ERR_OK) {
         TIME_HILOGE(TIME_MODULE_CLIENT, "get failed.");
         return -1;
@@ -348,16 +268,9 @@ int64_t TimeServiceClient::GetMonotonicTimeNs()
 int64_t TimeServiceClient::GetThreadTimeMs()
 {
     int64_t times;
-    if (timeServiceProxy_ == nullptr) {
-        TIME_HILOGW(TIME_MODULE_CLIENT, "Redo ConnectService");
-        timeServiceProxy_ = ConnectService();
-    }
-
-    if (timeServiceProxy_ == nullptr) {
-        TIME_HILOGE(TIME_MODULE_CLIENT, "GetThreadTimeMs quit because redoing ConnectService failed.");
+    if (!ConnectService()) {
         return -1;
     }
-
     if (timeServiceProxy_->GetThreadTimeMs(times) != ERR_OK) {
         TIME_HILOGE(TIME_MODULE_CLIENT, "get failed.");
         return -1;
@@ -369,13 +282,7 @@ int64_t TimeServiceClient::GetThreadTimeMs()
 int64_t TimeServiceClient::GetThreadTimeNs()
 {
     int64_t times;
-    if (timeServiceProxy_ == nullptr) {
-        TIME_HILOGW(TIME_MODULE_CLIENT, "Redo ConnectService");
-        timeServiceProxy_ = ConnectService();
-    }
-
-    if (timeServiceProxy_ == nullptr) {
-        TIME_HILOGE(TIME_MODULE_CLIENT, "GetThreadTimeNs quit because redoing ConnectService failed.");
+    if (!ConnectService()) {
         return -1;
     }
     if (timeServiceProxy_->GetThreadTimeNs(times) != ERR_OK) {
@@ -389,13 +296,7 @@ int64_t TimeServiceClient::GetThreadTimeNs()
 void TimeServiceClient::NetworkTimeStatusOff()
 {
     TIME_HILOGW(TIME_MODULE_CLIENT, "start");
-    if (timeServiceProxy_ == nullptr) {
-        TIME_HILOGW(TIME_MODULE_CLIENT, "Redo ConnectService");
-        timeServiceProxy_ = ConnectService();
-    }
-
-    if (timeServiceProxy_ == nullptr) {
-        TIME_HILOGE(TIME_MODULE_CLIENT, "NetworkTimeStatusOff quit because redoing ConnectService failed.");
+    if (!ConnectService()) {
         return;
     }
     timeServiceProxy_->NetworkTimeStatusOff();
@@ -406,13 +307,7 @@ void TimeServiceClient::NetworkTimeStatusOff()
 void TimeServiceClient::NetworkTimeStatusOn()
 {
     TIME_HILOGW(TIME_MODULE_CLIENT, "start");
-    if (timeServiceProxy_ == nullptr) {
-        TIME_HILOGW(TIME_MODULE_CLIENT, "Redo ConnectService");
-        timeServiceProxy_ = ConnectService();
-    }
-
-    if (timeServiceProxy_ == nullptr) {
-        TIME_HILOGE(TIME_MODULE_CLIENT, "NetworkTimeStatusOn quit because redoing ConnectService failed.");
+    if (!ConnectService()) {
         return;
     }
     timeServiceProxy_->NetworkTimeStatusOn();
@@ -422,7 +317,7 @@ void TimeServiceClient::NetworkTimeStatusOn()
 
 void TimeServiceClient::OnRemoteSaDied(const wptr<IRemoteObject> &remote)
 {
-    timeServiceProxy_ = ConnectService();
+    ConnectService();
 }
 
 TimeSaDeathRecipient::TimeSaDeathRecipient()
@@ -439,12 +334,7 @@ bool TimeServiceClient::ProxyTimer(int32_t uid, bool isProxy, bool needRetrigger
 {
     TIME_HILOGD(TIME_MODULE_CLIENT, "ProxyTimer start uid: %{public}d, isProxy: %{public}d",
         uid, isProxy);
-    if (timeServiceProxy_ == nullptr) {
-        TIME_HILOGW(TIME_MODULE_CLIENT, "ProxyTimer ConnectService");
-        timeServiceProxy_ = ConnectService();
-    }
-    if (timeServiceProxy_ == nullptr) {
-        TIME_HILOGE(TIME_MODULE_CLIENT, "ProxyTimer ConnectService failed.");
+    if (!ConnectService()) {
         return false;
     }
     return timeServiceProxy_->ProxyTimer(uid, isProxy, needRetrigger);
@@ -455,7 +345,7 @@ bool TimeServiceClient::ResetAllProxy()
     TIME_HILOGD(TIME_MODULE_CLIENT, "ResetAllProxy");
     if (timeServiceProxy_ == nullptr) {
         TIME_HILOGW(TIME_MODULE_CLIENT, "ResetAllProxy ConnectService");
-        timeServiceProxy_ = ConnectService();
+        ConnectService();
     }
     if (timeServiceProxy_ == nullptr) {
         TIME_HILOGE(TIME_MODULE_CLIENT, "ResetAllProxy ConnectService failed.");
